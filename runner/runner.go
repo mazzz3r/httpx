@@ -400,7 +400,12 @@ func New(options *Options) (*Runner, error) {
 	runner.scanopts = scanopts
 
 	if options.ShowStatistics {
-		runner.stats, err = clistats.New()
+		// a copy, as Start writes the port it falls back to into the options
+		statsOptions := clistats.DefaultOptions
+		if options.MetricsPort > 0 {
+			statsOptions.ListenPort = options.MetricsPort
+		}
+		runner.stats, err = clistats.NewWithOptions(context.Background(), &statsOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -617,6 +622,11 @@ func (r *Runner) prepareInput() {
 		err := r.stats.Start()
 		if err != nil {
 			gologger.Warning().Msgf("Could not create statistics: %s\n", err)
+		} else if stats, ok := r.stats.(*clistats.Statistics); ok {
+			if r.options.MetricsPort > 0 && stats.Options.ListenPort != r.options.MetricsPort {
+				gologger.Info().Msgf("Metrics port %d is not available, using %d\n", r.options.MetricsPort, stats.Options.ListenPort)
+			}
+			gologger.Verbose().Msgf("Started metrics server at %s\n", net.JoinHostPort(stats.Options.ListenHost, strconv.Itoa(stats.Options.ListenPort)))
 		}
 
 		r.stats.GetStatResponse(time.Duration(r.options.StatsInterval)*time.Second, func(s string, err error) error {
